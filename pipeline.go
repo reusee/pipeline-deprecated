@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"sync"
+	"sync/atomic"
 )
 
 type Pipeline struct {
@@ -11,6 +12,7 @@ type Pipeline struct {
 	done          chan struct{}
 	closeDoneOnce sync.Once
 	closed        bool
+	count         int64
 }
 
 type Pipe struct {
@@ -32,11 +34,17 @@ func (p *Pipeline) Error(err error) {
 }
 
 func (p *Pipeline) Add() {
+	atomic.AddInt64(&p.count, 1)
 	p.wg.Add(1)
 }
 
 func (p *Pipeline) Done() {
+	atomic.AddInt64(&p.count, -1)
 	p.wg.Done()
+}
+
+func (p *Pipeline) Count() int64 {
+	return atomic.LoadInt64(&p.count)
 }
 
 func (p *Pipeline) Wait() {
