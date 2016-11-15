@@ -97,3 +97,50 @@ func TestDone(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestJobWaitGroup(t *testing.T) {
+	pipeline := NewPipeline()
+	p1 := pipeline.NewPipe(512)
+	p2 := pipeline.NewPipe(512)
+
+	nMain := 0
+	var n1 int64
+
+	num := 500000
+
+	go func() {
+		for i := 0; i < num; i++ {
+			pipeline.AddJob("main")
+			if !p1.Do(func() {
+				pipeline.AddJob("1")
+				if !p2.Do(func() {
+					nMain++
+					pipeline.DoneJob("main")
+				}) {
+					return
+				}
+				atomic.AddInt64(&n1, 1)
+				pipeline.DoneJob("1")
+			}) {
+				return
+			}
+		}
+		pipeline.WaitJob("main")
+		pipeline.WaitJob("1")
+		pipeline.Close()
+	}()
+
+	go p1.ParallelProcess(8)
+	p2.Process()
+
+	if pipeline.Err != nil {
+		t.Fatal(pipeline.Err)
+	}
+
+	if nMain != num {
+		t.Fatalf("nMain not match")
+	}
+	if n1 != int64(num) {
+		t.Fatalf("n1 not match")
+	}
+}

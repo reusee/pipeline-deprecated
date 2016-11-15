@@ -6,13 +6,15 @@ import (
 )
 
 type Pipeline struct {
-	Err           error
-	setErrOnce    sync.Once
-	wg            sync.WaitGroup
-	done          chan struct{}
-	closeDoneOnce sync.Once
-	closed        bool
-	count         int64
+	Err               error
+	setErrOnce        sync.Once
+	wg                sync.WaitGroup
+	done              chan struct{}
+	closeDoneOnce     sync.Once
+	closed            bool
+	count             int64
+	jobWaitGroups     map[string]*sync.WaitGroup
+	jobWaitGroupsLock sync.Mutex
 }
 
 type Pipe struct {
@@ -22,7 +24,8 @@ type Pipe struct {
 
 func NewPipeline() *Pipeline {
 	return &Pipeline{
-		done: make(chan struct{}),
+		done:          make(chan struct{}),
+		jobWaitGroups: make(map[string]*sync.WaitGroup),
 	}
 }
 
@@ -49,6 +52,31 @@ func (p *Pipeline) Count() int64 {
 
 func (p *Pipeline) Wait() {
 	p.wg.Wait()
+}
+
+func (p *Pipeline) AddJob(job string) {
+	p.jobWaitGroupsLock.Lock()
+	wg, ok := p.jobWaitGroups[job]
+	if !ok {
+		wg = new(sync.WaitGroup)
+		p.jobWaitGroups[job] = wg
+	}
+	p.jobWaitGroupsLock.Unlock()
+	wg.Add(1)
+}
+
+func (p *Pipeline) DoneJob(job string) {
+	p.jobWaitGroupsLock.Lock()
+	wg := p.jobWaitGroups[job]
+	p.jobWaitGroupsLock.Unlock()
+	wg.Done()
+}
+
+func (p *Pipeline) WaitJob(job string) {
+	p.jobWaitGroupsLock.Lock()
+	wg := p.jobWaitGroups[job]
+	p.jobWaitGroupsLock.Unlock()
+	wg.Wait()
 }
 
 func (p *Pipeline) NewPipe(bufferSize int) *Pipe {
